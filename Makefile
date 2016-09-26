@@ -12,9 +12,44 @@ CROSS_COMPILE ?= mipsel-unknown-linux-gnu-
 
 export ARCH CROSS_COMPILE
 
+.PHONY: all
+all: $(prerequisites) vmlinuz.bin
+
+ifeq (,$(shell which $(CROSS_COMPILE)gcc))
+prerequisites += toolchain
+tuple := $(patsubst %-,%,$(CROSS_COMPILE))
+PATH := $(HOME)/x-tools/$(tuple)/bin:$(PWD)/bin:$(PATH)
+
+.PHONY: toolchain
+toolchain: $(HOME)/x-tools/$(tuple)/bin/$(CROSS_COMPILE)$(CC)
+
+$(CROSS_COMPILE)crosstool-ng:
+	mkdir -p $@/
+
+crosstool-ng/configure:
+	wget -qO- http://crosstool-ng.org | \
+	sed -n -e '/<h1 class="sectionedit1"><a name="news" id="news">News<\/a><\/h1>/,/^$$/{/Released/p}' | \
+	sed -n -e 's,.*Released \([0-9.]*\)\. Get it as <a href="\([a-z0-9;/-].*\)" class="wikilink1".*>bz2</a>.*,wget -qO- http://crosstool-ng.org\2 | tar xvj \&\& exit 0,p' | \
+	sh
+
+crosstool-ng/Makefile: crosstool-ng/configure
+	cd $(<D)/ && ./$(<F) --prefix=$(CURDIR)/$(CROSS_COMPILE)crosstool-ng
+
+crosstool-ng/ct-ng: crosstool-ng/Makefile
+	make -C crosstool-ng MAKELEVEL=0
+
+$(CROSS_COMPILE)crosstool-ng/bin/ct-ng: crosstool-ng/ct-ng
+	make -C crosstool-ng install MAKELEVEL=0
+
+$(CROSS_COMPILE)crosstool-ng/.config: $(CROSS_COMPILE)crosstool-ng/bin/ct-ng | $(CROSS_COMPILE)crosstool-ng
+	( cd $(CROSS_COMPILE)crosstool-ng && ct-ng $(tuple) )
+
+$(HOME)/x-tools/$(tuple)/bin/$(CROSS_COMPILE)$(CC): $(CROSS_COMPILE)crosstool-ng/.config
+	( cd $(CROSS_COMPILE)crosstool-ng/ && ct-ng build )
+endif
+
 ifeq (,$(shell which srec2bin))
-.PHONY: prerequisites
-prerequisites: srec2bin all
+prerequisites += srec2bin
 
 .PHONY: install
 install:
@@ -23,9 +58,6 @@ install:
 
 PATH := $(PATH):.
 endif
-
-.PHONY: all
-all: vmlinuz.bin
 
 $(CROSS_COMPILE)busybox $(CROSS_COMPILE)linux $(CROSS_COMPILE)rootfs $(CROSS_COMPILE)rootfs/dev $(CROSS_COMPILE)rootfs/tmp:
 	mkdir -p $@/
