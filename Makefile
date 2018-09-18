@@ -1,6 +1,6 @@
 #!/usr/bin/make -f
 #
-# Copyright 2016 Gaël PORTAY <gael.portay@gmail.com>
+# Copyright 2016-2018 Gaël PORTAY <gael.portay@gmail.com>
 #
 # Licensed under the MIT license.
 #
@@ -130,5 +130,5 @@ clean:
 
 .PHONY: mrproper
 mrproper: clean
-	rm -Rf $(CROSS_COMPILE)*
+	rm -Rf $(CROSS_COMPILE)* busybox* linux* crosstool-ng* srec2bin
 
