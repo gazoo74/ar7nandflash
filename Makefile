@@ -60,14 +60,21 @@ PATH := $(PATH):.
 endif
 
 $(CROSS_COMPILE)busybox $(CROSS_COMPILE)linux $(CROSS_COMPILE)rootfs $(CROSS_COMPILE)rootfs/dev $(CROSS_COMPILE)rootfs/tmp:
+.PHONY: all
+all: vmlinuz.bin
+
+$(CROSS_COMPILE)busybox $(CROSS_COMPILE)linux $(CROSS_COMPILE)rootfs $(CROSS_COMPILE)rootfs/proc $(CROSS_COMPILE)rootfs/sys $(CROSS_COMPILE)rootfs/dev $(CROSS_COMPILE)rootfs/tmp:
 	mkdir -p $@/
 
 initramfs.cpio.gz:
 
-initramfs.cpio: $(CROSS_COMPILE)rootfs/init $(CROSS_COMPILE)rootfs/bin/busybox | $(CROSS_COMPILE)rootfs/dev $(CROSS_COMPILE)rootfs/tmp
+initramfs.cpio: $(CROSS_COMPILE)rootfs/init $(CROSS_COMPILE)rootfs/bin/busybox $(CROSS_COMPILE)rootfs/dev/console | $(CROSS_COMPILE)rootfs/proc $(CROSS_COMPILE)rootfs/sys $(CROSS_COMPILE)rootfs/dev $(CROSS_COMPILE)rootfs/tmp
 
-$(CROSS_COMPILE)rootfs/init: | $(CROSS_COMPILE)rootfs
-	ln -sf bin/sh $@
+$(CROSS_COMPILE)rootfs/dev/console: | $(CROSS_COMPILE)rootfs/dev
+	fakeroot -- mknod -m 622 $@ c 5 1
+
+$(CROSS_COMPILE)rootfs/init: init | $(CROSS_COMPILE)rootfs
+	install -m 755 $< $@
 
 busybox/Makefile:
 	wget -qO- https://busybox.net/index.html | \
@@ -100,17 +107,24 @@ vmlinuz.elf: $(CROSS_COMPILE)linux/vmlinuz
 
 .PHONY: flash
 flash: vmlinuz.bin
+	openocd -s ../openocd/tcl \
+		-f interface/ftdi/tumpa.cfg \
+	        -f tools/firmware-recovery.tcl \
+	        -c "board netgear-dg834v3; reset_config srst_only; init; flash_part firmware $<; shutdown"
+
+.PHONY: reboot
+reboot:
 	openocd -f interface/ftdi/tumpa.cfg \
 	        -f tools/firmware-recovery.tcl \
-	        -c "board netgear-dg834v3; reset_config srst_only; flash_part firmware $<; shutdown"
+	        -c "board netgear-dg834v3; init; reset_config srst_only; reset run; shutdown"
 
 busybox_menuconfig:
 busybox_%:
-	make -C busybox O=$(CURDIR)/$(CROSS_COMPILE)busybox $*
+	make -C busybox O=$(CURDIR)/$(CROSS_COMPILE)busybox CONFIG_STATIC=y $*
 
 linux_menuconfig:
 linux_%:
-	make -C linux O=$(CURDIR)/$(CROSS_COMPILE)linux $*
+	make -C linux O=$(CURDIR)/$(CROSS_COMPILE)linux CONFIG_INITRAMFS_SOURCE=$(CURDIR)/$< $*
 
 %.srec: %.elf
 	$(CROSS_COMPILE)objcopy -S -O srec $(addprefix --remove-section=,reginfo .mdebug .comment .note .pdr .options .MIPS.options) $< $@
